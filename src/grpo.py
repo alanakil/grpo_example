@@ -12,21 +12,12 @@ from sklearn.metrics import accuracy_score
 
 # %%
 SYSTEM_PROMPT = """
-Respond in the following format:
+You will be given a Question and you must respond in the following format exactly:
 <reasoning>
-...
+Your detailed chain-of-thought here.
 </reasoning>
 <answer>
-...
-</answer>
-"""
-
-XML_COT_FORMAT = """
-<reasoning>
-{reasoning}
-</reasoning>
-<answer>
-{answer}
+Your final answer here. Provide just the number, no additional text.
 </answer>
 """
 
@@ -60,7 +51,7 @@ def get_gsm8k_questions(split="train", num_samples=None) -> Dataset:
         lambda x: {
             "prompt": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": x["question"]},
+                {"role": "user", "content": f"Question: {x['question']}"},
             ],
             "answer": extract_hash_answer(x["answer"]),
         }
@@ -135,10 +126,11 @@ def xmlcount_reward_fn(completions, **kwargs) -> list[float]:
 
 
 # %%
-model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+# model_name = "Qwen/Qwen2.5-0.5B"
+model_name = "meta-llama/Llama-3.2-1B"
 
-output_dir = "output/Qwen-0.5B-GRPO"
-run_name = "Qwen-0.5B-GRPO-gsm8k"
+output_dir = f"output/{model_name}"
+run_name = f"{model_name}-GRPO-gsm8k"
 
 training_args = GRPOConfig(
     output_dir=output_dir,
@@ -151,11 +143,11 @@ training_args = GRPOConfig(
     lr_scheduler_type="cosine",
     logging_steps=1,
     bf16=True,
-    per_device_train_batch_size=2,
+    per_device_train_batch_size=3,
     gradient_accumulation_steps=4,
-    num_generations=2,
+    num_generations=3,
     max_prompt_length=256,
-    max_completion_length=200,
+    max_completion_length=1000,
     num_train_epochs=1,
     save_steps=100,
     max_grad_norm=0.1,
@@ -174,7 +166,11 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 
 # %%
-wandb.init(project="GRPO-gsm8k", name=run_name, config=training_args.to_dict())
+wandb.init(
+    project=f"GRPO-gsm8k_{model_name}",
+    name=run_name,
+    config=training_args.to_dict(),
+)
 
 # %%
 trainer = GRPOTrainer(
@@ -244,63 +240,53 @@ def evaluate_model(model, tokenizer, dataset, sample_size=None):
 
 
 # %%
-for num_train_samples in [5, 10, 20]:
-    print(f"\n{'=' * 20} Training with {num_train_samples} samples {'=' * 20}")
-
-    dataset = get_gsm8k_questions(num_samples=num_train_samples)
-
-    trainer.train_dataset = dataset
-
-    # Evaluate BEFORE training
-    # pre_accuracy, _ = evaluate_model(model, tokenizer, validation_dataset)
-    # print(f"Accuracy BEFORE training: {pre_accuracy:.2%}")
-
-    # Train
-    trainer.train()
-
-    # Evaluate AFTER training
-    post_accuracy, _ = evaluate_model(model, tokenizer, validation_dataset)
-    print(f"Accuracy AFTER training: {post_accuracy:.2%}")
-
-
-# %%
-
-# %%
 # Evaluate on random 10-sample set
+# untrained_model = AutoModelForCausalLM.from_pretrained(
+#     model_name, torch_dtype=torch.bfloat16, device_map=None
+# ).to("cuda")
 pre_accuracy_sample, pre_examples = evaluate_model(
-    model, tokenizer, validation_dataset, sample_size=1
+    model, tokenizer, validation_dataset, sample_size=100
 )
-print("\nPerformance BEFORE training (10 random samples):")
+print("\nPerformance BEFORE training (100 random samples):")
 for ex in pre_examples:
     print(f"\nQuestion: {ex['question']}")
     print(f"True Answer: {ex['true']}")
     print(f"Predicted Answer: {ex['predicted']}")
     print(f"Correct: {'✅' if ex['correct'] else '❌'}")
 
-print(f"\nAccuracy (random 10 samples) BEFORE training: {pre_accuracy_sample:.2%}")
+print(f"\nAccuracy (random 100 samples) BEFORE training: {pre_accuracy_sample:.2%}")
 
-# %%
-# Evaluate on entire validation set
-pre_accuracy_full, _ = evaluate_model(model, tokenizer, validation_dataset)
-print(f"\nAccuracy (full validation set) BEFORE training: {pre_accuracy_full:.2%}")
 
 # %%
 trainer.train()
 
 # %%
+output_dir_final = "../artifacts/final_model_base"
+trainer.save_model(output_dir_final)
+tokenizer.save_pretrained(output_dir_final)
+
+print(f"✅ Model and tokenizer saved to {output_dir_final}")
+
+# %%
+# Evaluate on entire validation set
+pre_accuracy_full, _ = evaluate_model(model, tokenizer, validation_dataset)
+print(f"\nAccuracy (full validation set) AFTER training: {pre_accuracy_full:.2%}")
+
+# %%
 # Evaluate on random 10-sample set after training
 post_accuracy_sample, post_examples = evaluate_model(
-    model, tokenizer, validation_dataset, sample_size=10
+    model, tokenizer, validation_dataset, sample_size=20
 )
-print("\nPerformance AFTER training (10 random samples):")
+print("\nPerformance AFTER training (100 random samples):")
 for ex in post_examples:
     print(f"\nQuestion: {ex['question']}")
     print(f"True Answer: {ex['true']}")
     print(f"Predicted Answer: {ex['predicted']}")
     print(f"Correct: {'✅' if ex['correct'] else '❌'}")
 
-print(f"\nAccuracy (random 10 samples) AFTER training: {post_accuracy_sample:.2%}")
+print(f"\nAccuracy (random 100 samples) AFTER training: {post_accuracy_sample:.2%}")
 
+# %%
 # Evaluate on entire validation set after training
 post_accuracy_full, _ = evaluate_model(model, tokenizer, validation_dataset)
 print(f"\nAccuracy (full validation set) AFTER training: {post_accuracy_full:.2%}")
