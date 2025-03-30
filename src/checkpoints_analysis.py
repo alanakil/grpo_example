@@ -72,14 +72,14 @@ def evaluate_model(model, tokenizer, dataset, sample_size=None):
 
 def get_gsm8k_questions(split="test", num_samples=None):
     SYSTEM_PROMPT = """
-You will be given a Question and you must respond in the following format exactly:
-<reasoning>
-Your detailed chain-of-thought here.
-</reasoning>
-<answer>
-Your final answer here. Provide just the number, no additional text.
-</answer>
-"""
+    You will be given a Question and you must respond in the following format exactly:
+    <reasoning>
+    Your detailed chain-of-thought here.
+    </reasoning>
+    <answer>
+    Your final answer here. Provide just the number, no additional text.
+    </answer>
+    """
     data = load_dataset("openai/gsm8k", "main")[split]
     data = data.map(
         lambda x: {
@@ -119,7 +119,7 @@ tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir)
 tokenizer.pad_token = tokenizer.eos_token
 
 # Load evaluation dataset
-validation_dataset = get_gsm8k_questions("test", 200)
+validation_dataset = get_gsm8k_questions("test", 300)
 
 # Discover and sort checkpoint directories (e.g., checkpoint-100, checkpoint-200, etc.)
 checkpoint_dirs = [
@@ -137,16 +137,26 @@ for ckpt in checkpoint_dirs:
     model = AutoModelForCausalLM.from_pretrained(
         ckpt, torch_dtype=torch.bfloat16, device_map=None
     ).to("cuda")
-    accuracy, _ = evaluate_model(model, tokenizer, validation_dataset, sample_size=100)
+    accuracy, _ = evaluate_model(model, tokenizer, validation_dataset, sample_size=300)
     print(f"Accuracy for {ckpt}: {accuracy:.2%}")
     accuracy_list.append(accuracy)
     del model
     torch.cuda.empty_cache()
     gc.collect()
 
+# %%
+for idx in range(len(checkpoint_dirs)):
+    print(f"Checkpoint: {checkpoint_dirs[idx]}")
+    print(f"Accuracy: {accuracy_list[idx]}")
+    print("----------------------------------")
 
 # %%
 # Plot accuracy over checkpoints
-plt.plot(checkpoint_dirs, accuracy_list, "-o")
+x_ticks = [check[-4:] for check in checkpoint_dirs]
+plt.plot(x_ticks, accuracy_list, "-o")
+plt.xticks(rotation=45)
+plt.xlabel("Checkpoint")
+plt.ylabel("Accuracy")
+plt.show()
 
 # %%
