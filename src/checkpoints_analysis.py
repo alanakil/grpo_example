@@ -157,6 +157,10 @@ plt.plot(x_ticks, accuracy_list, "-o")
 plt.xticks(rotation=45)
 plt.xlabel("Checkpoint")
 plt.ylabel("Accuracy")
+plt.savefig(f"../data/accuracy_vs_checkpoints_{model_name}.png", format="png", dpi=300)
+plt.savefig(f"../data/accuracy_vs_checkpoints_{model_name}.pdf", format="pdf")
 plt.show()
+
+# %%
 
 # %%
