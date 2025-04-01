@@ -10,5 +10,6 @@ Additionally, I show how not all training steps are necessary to reach this perf
 
 This is a work in progress and I have a few things coming up that I will add soon:
 - Specific examples of how it responds to questions throughout the training process. When does reasoning emerge?
+- Experiment with other math datasets
 - Tests on other small models like Llama-3.2-1B-base
 - How does the structure of such a model differ from its -Instruct version?
