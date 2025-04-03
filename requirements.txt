@@ -4,3 +4,4 @@ torchaudio
 scikit-learn
 trl
 datasets
+wandb
