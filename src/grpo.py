@@ -4,11 +4,10 @@ import torch
 from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
-import random, numpy as np
-import wandb
 import random
+import numpy as np
+import wandb
 from tqdm import tqdm
-from sklearn.metrics import accuracy_score
 
 # %%
 SYSTEM_PROMPT = """
@@ -63,6 +62,33 @@ def get_gsm8k_questions(split="train", num_samples=None) -> Dataset:
 
 dataset = get_gsm8k_questions("train", None)
 validation_dataset = get_gsm8k_questions("test", None)
+
+
+# %%
+def get_aime_questions(num_samples=None) -> Dataset:
+    data = load_dataset("di-zhang-fdu/AIME_1983_2024")
+    data = data.map(
+        lambda x: {
+            "prompt": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Question: {x['Question']}"},
+            ],
+            "answer": extract_hash_answer(x["Answer"]),
+        }
+    )
+    if num_samples:
+        data = data.shuffle(seed=42).select(range(num_samples))
+    data = data["train"]
+
+    print(f"Total number of examples: {len(data)}")
+
+    data = data.train_test_split(test_size=0.2, seed=42)
+    dataset = data["train"]
+    validation_dataset = data["test"]
+    return dataset, validation_dataset
+
+
+dataset, validation_dataset = get_aime_questions()
 
 
 # %%
@@ -126,8 +152,8 @@ def xmlcount_reward_fn(completions, **kwargs) -> list[float]:
 
 
 # %%
-# model_name = "Qwen/Qwen2.5-0.5B"
-model_name = "meta-llama/Llama-3.2-1B"
+model_name = "Qwen/Qwen2.5-0.5B"
+# model_name = "meta-llama/Llama-3.2-1B"
 
 output_dir = f"output/{model_name}"
 run_name = f"{model_name}-GRPO-gsm8k"
@@ -160,14 +186,14 @@ training_args = GRPOConfig(
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name, torch_dtype=torch.bfloat16, device_map=None
-).to("cuda")
+).to("mps")
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 
 # %%
 wandb.init(
-    project=f"GRPO-gsm8k_{model_name}",
+    project=f"GRPO-gsm8k_Qwen2.5-0.5B",
     name=run_name,
     config=training_args.to_dict(),
 )
@@ -203,7 +229,7 @@ def evaluate_model(model, tokenizer, dataset, sample_size=None):
         prompt = tokenizer.apply_chat_template(
             item["prompt"], tokenize=False, add_generation_prompt=True
         )
-        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+        inputs = tokenizer(prompt, return_tensors="pt").to("mps")
 
         outputs = model.generate(
             **inputs,
@@ -220,7 +246,7 @@ def evaluate_model(model, tokenizer, dataset, sample_size=None):
         response_text = response_text.split(assistant_marker)[-1]
         response_text = response_text.split("<|im_end|>")[0]
         pred_answer = extract_xml_answer(response_text)
-        true_answer = item["answer"].strip()
+        true_answer = item["Answer"].strip()
 
         is_correct = pred_answer == true_answer
         correct += is_correct
